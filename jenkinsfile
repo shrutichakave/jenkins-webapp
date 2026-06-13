@@ -1,22 +1,19 @@
-pipeline{
+pipeline {
     agent any
     environment {
-         IMAGE_NAME ="shrutichakave/frontend-app"
-         IMAGE_TAG = "${BUILD_NUMBER}"
-         APP_SERVER = "13.204.64.13"
+        IMAGE_NAME = "gopalsharma2504/frontend"
+        IMAGE_TAG  = "${BUILD_NUMBER}"
+        APP_SERVER = "13.204.64.13"
     }
-    stages{
-        
-        stage('Checkuot'){
-            
-        steps{
+    stages {
+        stage('Checkout') {
+            steps {
                 git branch: 'main',
                 url: 'https://github.com/shrutichakave/jenkins-webapp.git'
             }
         }
-        stage('Build Docker Image'){
+        stage('Build Docker Image') {
             steps {
-
                 sh '''
                 docker build -f docker/dockerfile -t $IMAGE_NAME:$IMAGE_TAG .
                 '''
@@ -24,12 +21,11 @@ pipeline{
         }
         stage('Docker Login') {
             steps {
-                withCredential([
+                withCredentials([
                     usernamePassword(
-                        credentialsID: 'DockerCred',
+                        credentialsId: 'DockerCred',
                         usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS'
-
                     )
                 ]) {
                     sh '''
@@ -40,12 +36,12 @@ pipeline{
                 }
             }
         }
-        stage('push Image'){
+        stage('Push Image') {
             steps {
                 sh '''
-                docker push $IAMGE_NAME:$IAMGE_TAG
+                docker push $IMAGE_NAME:$IMAGE_TAG
                 docker tag \
-                $IMAGE_NAME:$IAMGE_TAG \
+                $IMAGE_NAME:$IMAGE_TAG \
                 $IMAGE_NAME:latest
                 docker push $IMAGE_NAME:latest
                 '''
@@ -53,14 +49,14 @@ pipeline{
         }
         stage('Deploy To App Server') {
             steps {
-                sh"""
+                sh """
                 ssh ubuntu@$APP_SERVER '
                 docker pull $IMAGE_NAME:latest
                 docker stop frontend || true
                 docker rm frontend || true
                 docker run -d \
                 --name frontend \
-                -P 80:80 \
+                -p 80:80 \
                 $IMAGE_NAME:latest
                 '
                 """
@@ -68,7 +64,7 @@ pipeline{
         }
     }
     post {
-        success{
+        success {
             echo "Deployment Successful"
         }
         failure {
@@ -76,9 +72,3 @@ pipeline{
         }
     }
 }
-
-
-                
-
-                
-           
