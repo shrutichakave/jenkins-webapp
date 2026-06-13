@@ -1,7 +1,7 @@
 pipeline {
     agent any
     environment {
-        IMAGE_NAME = "gopalsharma2504/frontend"
+        IMAGE_NAME = "shrutichakave/frontend"
         IMAGE_TAG  = "${BUILD_NUMBER}"
         APP_SERVER = "13.204.64.13"
     }
