@@ -1,0 +1,181 @@
+// pipeline {
+//     agent any
+//     environment {
+//         IMAGE_NAME = "shrutichakave/frontend-app"
+//         IMAGE_TAG  = "${BUILD_NUMBER}"
+//         APP_SERVER = "13.204.64.13"
+//     }
+//     stages {
+//         stage('Checkout') {
+//             steps {
+//                 git branch: 'main',
+//                 url: 'https://github.com/shrutichakave/jenkins-webapp.git'
+//             }
+//         }
+//         stage('Build Docker Image') {
+//             steps {
+//                 sh '''
+//                 docker build -f docker/dockerfile -t $IMAGE_NAME:$IMAGE_TAG .
+//                 '''
+//             }
+//         }
+//         stage('Docker Login') {
+//             steps {
+//                 withCredentials([
+//                     usernamePassword(
+//                         credentialsId: 'DockerCred',
+//                         usernameVariable: 'DOCKER_USER',
+//                         passwordVariable: 'DOCKER_PASS'
+//                     )
+//                 ]) {
+//                     sh '''
+//                     echo $DOCKER_PASS | docker login \
+//                     -u $DOCKER_USER \
+//                     --password-stdin
+//                     '''
+//                 }
+//             }
+//         }
+//         stage('Push Image') {
+//             steps {
+//                 sh '''
+//                 docker push $IMAGE_NAME:$IMAGE_TAG
+//                 docker tag \
+//                 $IMAGE_NAME:$IMAGE_TAG \
+//                 $IMAGE_NAME:latest
+//                 docker push $IMAGE_NAME:latest
+//                 '''
+//             }
+//         }
+//         stage('Deploy To App Server') {
+//             steps {
+//                 sh """
+//                 ssh ubuntu@$APP_SERVER '
+//                 docker pull $IMAGE_NAME:latest
+//                 docker stop frontend || true
+//                 docker rm frontend || true
+//                 docker run -d \
+//                 --name frontend \
+//                 -p 80:80 \
+//                 $IMAGE_NAME:latest
+//                 '
+//                 """
+//             }
+//         }
+//     }
+//     post {
+//         success {
+//             echo "Deployment Successful"
+//         }
+//         failure {
+//             echo "Deployment Failed"
+//         }
+//     }
+// }
+
+
+//pipeline{
+  //  agent any
+    //stages{
+      //  stage('Deployment'){
+        //    steps{
+          //      sh """
+            //    scp docker-compose.yaml ubuntu@65.0.30.197:/home/ubuntu/
+              //  ssh ubuntu@65.0.30.197 '''
+                //cd /home/ubuntu
+                //docker-compose down
+                //docker-compose up -d
+                //'''
+                //"""
+           // }
+        //}
+    //}
+//}
+
+pipeline{
+    agent any
+    environment{
+        AWS_REGION = 'ap-south-1'
+        ACCOUNT_ID = '290993050816'
+        REPOSITORY = 'frontend'
+        IMAGE_TAG = '${BUILD_NUMBER}'
+        ECR_URI = "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPOSITORY}"
+        ACCESS_KEY_ID = credentials('ACCESS_KEY_ID')
+        SECRET_ACCESS_KEY = credentials('SECRET_ACCESS_KEY')
+        CLUSTER_NAME = 'default'
+        SERVICE_NAME = 'frontend-2922'
+    }
+    stages{
+        stage('Checkout'){
+            steps{
+                checkout scm
+            }
+        }
+        stage('Build Docker Image'){
+            steps{
+                sh """
+                docker build  -f docker/dockerfile -t ${REPOSITORY}:${IMAGE_TAG} .
+                """
+            }
+        }
+        stage('Login to AWS ECR'){
+            steps {
+                withCredentials([
+                    string(credentialsId: 'ACCESS_KEY_ID', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'SECRET_ACCESS_KEY', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    sh """
+                        export AWS_DEFAULT_REGION=${AWS_REGION}
+
+                        aws sts get-caller-identity
+
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                        docker login \
+                        --username AWS \
+                        --password-stdin ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                    """
+                }
+            }
+        }
+        stage ('Login to AWS CLI'){
+            steps{
+                sh """
+                aws configure set aws_access_key_id ${ACCESS_KEY_ID}
+                aws configure set aws_secret_access_key ${SECRET_ACCESS_KEY}
+                aws configure set default.region ${AWS_REGION}
+                """
+            }
+        }
+        stage('Tag and Push Docker Image to ECR'){
+            steps{
+                sh """
+                docker tag ${REPOSITORY}:${IMAGE_TAG} ${ECR_URI}
+                docker tag ${REPOSITORY}:${IMAGE_TAG} ${ECR_URI}:latest
+                docker push ${ECR_URI}
+                docker push ${ECR_URI}:latest
+                """
+            }
+        }
+        stage('Deploy to ECS Service'){
+            steps{
+                sh """
+                aws ecs update-service \
+                --cluster ${CLUSTER_NAME} \
+                --service ${SERVICE_NAME} \
+                --force-new-deployment
+                """
+            }
+        }
+    }
+    post{
+        success{
+            echo "Deployment Successful!"
+            cleanWs()
+            sh 'docker image prune -f'
+        }
+        failure{
+            echo "Deployment Failed!"
+            cleanWs()
+        }
+    }
+}
